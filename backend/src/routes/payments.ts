@@ -44,7 +44,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 0,
     totalCredits: 500,
     price: 4.99,
-    productId: 'credits_500',
+    productId: 'credits_501',
   },
   {
     id: '1000',
@@ -52,7 +52,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 10,
     totalCredits: 1100,
     price: 9.99,
-    productId: 'credits_1000',
+    productId: 'credits_1001',
   },
   {
     id: '2000',
@@ -60,7 +60,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 15,
     totalCredits: 2300,
     price: 19.99,
-    productId: 'credits_2000',
+    productId: 'credits_2001',
   },
   {
     id: '3000',
@@ -68,7 +68,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 20,
     totalCredits: 3600,
     price: 29.99,
-    productId: 'credits_3000',
+    productId: 'credits_3001',
   },
   {
     id: '5000',
@@ -76,7 +76,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 25,
     totalCredits: 6250,
     price: 49.99,
-    productId: 'credits_5000',
+    productId: 'credits_5001',
   },
   {
     id: '10000',
@@ -84,7 +84,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 30,
     totalCredits: 13000,
     price: 99.99,
-    productId: 'credits_10000',
+    productId: 'credits_10001',
   },
 ];
 
@@ -240,6 +240,14 @@ router.post('/apple/verify-receipt', async (req, res) => {
     // Find the matching transaction in the receipt
     // Critical security fix: Always require exact transactionId match
     const inAppPurchases = verificationResult.receipt?.in_app || [];
+    
+    // Log all transactions for debugging
+    console.log('Receipt transactions:', inAppPurchases.map((txn: any) => ({
+      product_id: txn.product_id,
+      transaction_id: txn.transaction_id
+    })));
+    console.log('Looking for transaction with productId:', productId, 'transactionId:', transactionId);
+    
     const matchingTransaction = inAppPurchases.find(
       (txn: any) =>
         txn.product_id === productId &&
@@ -247,15 +255,41 @@ router.post('/apple/verify-receipt', async (req, res) => {
     );
 
     if (!matchingTransaction) {
+      console.error('Transaction not found. Requested:', { productId, transactionId });
       return res.status(400).json({ 
-        error: 'Transaction not found in receipt. Product ID and transaction ID must match exactly.' 
+        error: 'Transaction not found in receipt. Product ID and transaction ID must match exactly.',
+        requestedProductId: productId,
+        requestedTransactionId: transactionId,
+        availableTransactions: inAppPurchases.map((txn: any) => ({
+          product_id: txn.product_id,
+          transaction_id: txn.transaction_id
+        }))
       });
     }
+    
+    // Use the product_id from the receipt as the source of truth
+    const receiptProductId = matchingTransaction.product_id;
+    console.log('Found matching transaction with product_id:', receiptProductId);
 
     // Find the package by product ID
-    const packageData = findPackageByProductId(productId);
+    // Use the product_id from the receipt as the source of truth (more secure)
+    const finalProductId = receiptProductId || productId;
+    
+    // Log for debugging
+    console.log('Looking for product ID:', finalProductId);
+    console.log('Request productId:', productId, 'Receipt productId:', receiptProductId);
+    console.log('Available product IDs:', CREDIT_PACKAGES.map(p => p.productId));
+    
+    const packageData = findPackageByProductId(finalProductId);
     if (!packageData) {
-      return res.status(400).json({ error: 'Invalid product ID' });
+      console.error(`Product ID not found: "${finalProductId}" (from receipt: "${receiptProductId}", from request: "${productId}"). Available IDs: ${CREDIT_PACKAGES.map(p => p.productId).join(', ')}`);
+      return res.status(400).json({ 
+        error: 'Invalid product ID',
+        receivedProductId: productId,
+        receiptProductId: receiptProductId,
+        finalProductId: finalProductId,
+        availableProductIds: CREDIT_PACKAGES.map(p => p.productId)
+      });
     }
 
     // Ensure user account exists
