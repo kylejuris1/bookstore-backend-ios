@@ -608,4 +608,38 @@ router.post('/merge-guest-account', async (req, res) => {
   }
 });
 
+// IAP logging endpoint - receives logs from frontend
+router.post('/logs/iap', async (req, res) => {
+  try {
+    const { level, message, data, timestamp, platform } = req.body;
+    
+    // Log to console with appropriate level
+    const logMessage = `[IAP_LOG_FRONTEND] [${level.toUpperCase()}] ${message}`;
+    const logData = {
+      timestamp: timestamp || new Date().toISOString(),
+      platform,
+      ...data
+    };
+    
+    switch (level) {
+      case 'error':
+        console.error(logMessage, logData);
+        break;
+      case 'warn':
+        console.warn(logMessage, logData);
+        break;
+      case 'info':
+      default:
+        console.log(logMessage, logData);
+        break;
+    }
+    
+    // Return success (we don't need to store these, just log them)
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[IAP_LOG_FRONTEND] Error processing log:', error);
+    res.status(500).json({ error: 'Failed to process log' });
+  }
+});
+
 export default router;
