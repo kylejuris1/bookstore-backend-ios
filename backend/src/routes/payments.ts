@@ -88,8 +88,41 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
   },
 ];
 
-const findPackageByProductId = (productId: string) =>
-  CREDIT_PACKAGES.find((pkg) => pkg.productId === productId);
+// TEMPORARY DEBUG: Log all configured product IDs on module load
+console.log('[PAYMENT_ID_DEBUG] ===== CREDIT_PACKAGES INITIALIZED =====');
+CREDIT_PACKAGES.forEach((pkg, index) => {
+  console.log(`[PAYMENT_ID_DEBUG] Package ${index + 1}: productId="${pkg.productId}" (length: ${pkg.productId.length}, charCodes: [${pkg.productId.split('').map(c => c.charCodeAt(0)).join(', ')}])`);
+});
+console.log('[PAYMENT_ID_DEBUG] ========================================');
+
+const findPackageByProductId = (productId: string) => {
+  // TEMPORARY DEBUG: Log search attempt
+  console.log(`[PAYMENT_ID_DEBUG] findPackageByProductId called with: "${productId}" (length: ${productId.length}, charCodes: [${productId.split('').map(c => c.charCodeAt(0)).join(', ')}])`);
+  
+  const result = CREDIT_PACKAGES.find((pkg) => {
+    const matches = pkg.productId === productId;
+    console.log(`[PAYMENT_ID_DEBUG]   Comparing "${pkg.productId}" === "${productId}": ${matches}`);
+    if (!matches && pkg.productId.length === productId.length) {
+      // If lengths match but strings don't, log character-by-character comparison
+      console.log(`[PAYMENT_ID_DEBUG]   Lengths match but strings differ. Character comparison:`);
+      for (let i = 0; i < Math.min(pkg.productId.length, productId.length); i++) {
+        const pkgChar = pkg.productId[i];
+        const searchChar = productId[i];
+        const match = pkgChar === searchChar;
+        console.log(`[PAYMENT_ID_DEBUG]     [${i}]: '${pkgChar}' (${pkgChar.charCodeAt(0)}) vs '${searchChar}' (${searchChar.charCodeAt(0)}) = ${match}`);
+      }
+    }
+    return matches;
+  });
+  
+  if (result) {
+    console.log(`[PAYMENT_ID_DEBUG] ✅ Found package: id="${result.id}", productId="${result.productId}"`);
+  } else {
+    console.log(`[PAYMENT_ID_DEBUG] ❌ No package found for productId: "${productId}"`);
+  }
+  
+  return result;
+};
 
 const findPackageById = (id: string) => CREDIT_PACKAGES.find((pkg) => pkg.id === id);
 
@@ -173,6 +206,7 @@ async function verifyAppleReceipt(receiptData: string, useSandbox = false): Prom
 router.get('/packages', async (req, res) => {
   try {
     const userId = (req.query.userId as string) || null;
+    console.log('[PAYMENT_ID_DEBUG] GET /packages - userId:', userId);
     let availablePackages = CREDIT_PACKAGES;
 
     if (userId) {
@@ -187,14 +221,20 @@ router.get('/packages', async (req, res) => {
         : [];
       const purchasedSet = new Set(purchasedProducts);
 
+      console.log('[PAYMENT_ID_DEBUG] User purchased products:', Array.from(purchasedSet));
+      console.log('[PAYMENT_ID_DEBUG] Filtering packages...');
+
       availablePackages = CREDIT_PACKAGES.filter((pkg) => {
-        if (pkg.oneTime && purchasedSet.has(pkg.productId)) {
+        const isPurchased = pkg.oneTime && purchasedSet.has(pkg.productId);
+        console.log(`[PAYMENT_ID_DEBUG]   Package "${pkg.productId}": oneTime=${pkg.oneTime}, purchased=${isPurchased}, included=${!isPurchased}`);
+        if (isPurchased) {
           return false;
         }
         return true;
       });
     }
 
+    console.log(`[PAYMENT_ID_DEBUG] Returning ${availablePackages.length} packages`);
     res.json(availablePackages);
   } catch (error) {
     console.error('Error returning packages:', error);
@@ -205,6 +245,7 @@ router.get('/packages', async (req, res) => {
 // Verify Apple IAP receipt and credit the user
 router.post('/apple/verify-receipt', async (req, res) => {
   try {
+    console.log('[PAYMENT_ID_DEBUG] ===== /apple/verify-receipt REQUEST START =====');
     const { receiptData, productId, transactionId, userId } = req.body as {
       receiptData?: string;
       productId?: string;
@@ -212,25 +253,35 @@ router.post('/apple/verify-receipt', async (req, res) => {
       userId?: string;
     };
 
+    // TEMPORARY DEBUG: Log incoming request data
+    console.log('[PAYMENT_ID_DEBUG] Incoming request body:');
+    console.log(`[PAYMENT_ID_DEBUG]   productId: "${productId}" (type: ${typeof productId}, length: ${productId?.length}, charCodes: ${productId ? `[${productId.split('').map(c => c.charCodeAt(0)).join(', ')}]` : 'null'})`);
+    console.log(`[PAYMENT_ID_DEBUG]   transactionId: "${transactionId}"`);
+    console.log(`[PAYMENT_ID_DEBUG]   userId: "${userId}"`);
+    console.log(`[PAYMENT_ID_DEBUG]   receiptData: ${receiptData ? `present (${receiptData.length} chars)` : 'missing'}`);
+
     // Critical security fix: Require transactionId to prevent replay attacks
     if (!receiptData || !productId || !transactionId || !userId) {
+      console.log('[PAYMENT_ID_DEBUG] ❌ Missing required fields');
       return res.status(400).json({ 
         error: 'receiptData, productId, transactionId, and userId are required' 
       });
     }
 
     if (!APPLE_SHARED_SECRET) {
-      console.error('APPLE_SHARED_SECRET is not configured');
+      console.error('[PAYMENT_ID_DEBUG] ❌ APPLE_SHARED_SECRET is not configured');
       return res.status(500).json({ error: 'Apple IAP is not configured on the server.' });
     }
 
     // Verify receipt with Apple
+    console.log('[PAYMENT_ID_DEBUG] Verifying receipt with Apple...');
     const verificationResult = await verifyAppleReceipt(receiptData);
+    console.log('[PAYMENT_ID_DEBUG] Apple verification result status:', verificationResult.status);
 
     // Check verification status
     // 0 = valid receipt
     if (verificationResult.status !== 0) {
-      console.error('Apple receipt verification failed:', verificationResult.status);
+      console.error('[PAYMENT_ID_DEBUG] ❌ Apple receipt verification failed:', verificationResult.status);
       return res.status(400).json({
         error: 'Receipt verification failed',
         appleStatus: verificationResult.status,
@@ -241,21 +292,38 @@ router.post('/apple/verify-receipt', async (req, res) => {
     // Critical security fix: Always require exact transactionId match
     const inAppPurchases = verificationResult.receipt?.in_app || [];
     
-    // Log all transactions for debugging
-    console.log('Receipt transactions:', inAppPurchases.map((txn: any) => ({
-      product_id: txn.product_id,
-      transaction_id: txn.transaction_id
-    })));
-    console.log('Looking for transaction with productId:', productId, 'transactionId:', transactionId);
+    // TEMPORARY DEBUG: Log all transactions from receipt
+    console.log('[PAYMENT_ID_DEBUG] Receipt contains', inAppPurchases.length, 'transactions:');
+    inAppPurchases.forEach((txn: any, index: number) => {
+      console.log(`[PAYMENT_ID_DEBUG]   Transaction ${index + 1}:`);
+      console.log(`[PAYMENT_ID_DEBUG]     product_id: "${txn.product_id}" (length: ${txn.product_id?.length}, charCodes: ${txn.product_id ? `[${txn.product_id.split('').map((c: string) => c.charCodeAt(0)).join(', ')}]` : 'null'})`);
+      console.log(`[PAYMENT_ID_DEBUG]     transaction_id: "${txn.transaction_id}"`);
+      console.log(`[PAYMENT_ID_DEBUG]     Comparing receipt product_id "${txn.product_id}" === request productId "${productId}": ${txn.product_id === productId}`);
+      if (txn.product_id && productId && txn.product_id.length === productId.length && txn.product_id !== productId) {
+        console.log(`[PAYMENT_ID_DEBUG]     ⚠️ Lengths match but strings differ! Character-by-character:`);
+        for (let i = 0; i < Math.min(txn.product_id.length, productId.length); i++) {
+          const receiptChar = txn.product_id[i];
+          const requestChar = productId[i];
+          const match = receiptChar === requestChar;
+          console.log(`[PAYMENT_ID_DEBUG]       [${i}]: '${receiptChar}' (${receiptChar.charCodeAt(0)}) vs '${requestChar}' (${requestChar.charCodeAt(0)}) = ${match}`);
+        }
+      }
+    });
+    console.log(`[PAYMENT_ID_DEBUG] Looking for transaction matching productId: "${productId}", transactionId: "${transactionId}"`);
     
     const matchingTransaction = inAppPurchases.find(
-      (txn: any) =>
-        txn.product_id === productId &&
-        txn.transaction_id === transactionId
+      (txn: any) => {
+        const productMatch = txn.product_id === productId;
+        const transactionMatch = txn.transaction_id === transactionId;
+        console.log(`[PAYMENT_ID_DEBUG]   Checking transaction: product_id match=${productMatch}, transaction_id match=${transactionMatch}`);
+        return productMatch && transactionMatch;
+      }
     );
 
     if (!matchingTransaction) {
-      console.error('Transaction not found. Requested:', { productId, transactionId });
+      console.error('[PAYMENT_ID_DEBUG] ❌ Transaction not found in receipt');
+      console.error('[PAYMENT_ID_DEBUG]   Requested productId:', productId);
+      console.error('[PAYMENT_ID_DEBUG]   Requested transactionId:', transactionId);
       return res.status(400).json({ 
         error: 'Transaction not found in receipt. Product ID and transaction ID must match exactly.',
         requestedProductId: productId,
@@ -269,20 +337,25 @@ router.post('/apple/verify-receipt', async (req, res) => {
     
     // Use the product_id from the receipt as the source of truth
     const receiptProductId = matchingTransaction.product_id;
-    console.log('Found matching transaction with product_id:', receiptProductId);
+    console.log('[PAYMENT_ID_DEBUG] ✅ Found matching transaction');
+    console.log(`[PAYMENT_ID_DEBUG]   Receipt product_id: "${receiptProductId}" (length: ${receiptProductId?.length}, charCodes: ${receiptProductId ? `[${receiptProductId.split('').map(c => c.charCodeAt(0)).join(', ')}]` : 'null'})`);
+    console.log(`[PAYMENT_ID_DEBUG]   Request productId: "${productId}" (length: ${productId?.length}, charCodes: ${productId ? `[${productId.split('').map(c => c.charCodeAt(0)).join(', ')}]` : 'null'})`);
 
     // Find the package by product ID
     // Use the product_id from the receipt as the source of truth (more secure)
     const finalProductId = receiptProductId || productId;
     
-    // Log for debugging
-    console.log('Looking for product ID:', finalProductId);
-    console.log('Request productId:', productId, 'Receipt productId:', receiptProductId);
-    console.log('Available product IDs:', CREDIT_PACKAGES.map(p => p.productId));
+    console.log('[PAYMENT_ID_DEBUG] Using finalProductId:', finalProductId);
+    console.log('[PAYMENT_ID_DEBUG] Available product IDs in CREDIT_PACKAGES:');
+    CREDIT_PACKAGES.forEach((pkg, index) => {
+      console.log(`[PAYMENT_ID_DEBUG]   [${index}] "${pkg.productId}" (length: ${pkg.productId.length})`);
+    });
     
     const packageData = findPackageByProductId(finalProductId);
     if (!packageData) {
-      console.error(`Product ID not found: "${finalProductId}" (from receipt: "${receiptProductId}", from request: "${productId}"). Available IDs: ${CREDIT_PACKAGES.map(p => p.productId).join(', ')}`);
+      console.error('[PAYMENT_ID_DEBUG] ❌ Product ID not found in CREDIT_PACKAGES');
+      console.error(`[PAYMENT_ID_DEBUG]   finalProductId: "${finalProductId}" (from receipt: "${receiptProductId}", from request: "${productId}")`);
+      console.error('[PAYMENT_ID_DEBUG]   Available IDs:', CREDIT_PACKAGES.map(p => `"${p.productId}"`).join(', '));
       return res.status(400).json({ 
         error: 'Invalid product ID',
         receivedProductId: productId,
@@ -291,6 +364,13 @@ router.post('/apple/verify-receipt', async (req, res) => {
         availableProductIds: CREDIT_PACKAGES.map(p => p.productId)
       });
     }
+    
+    console.log('[PAYMENT_ID_DEBUG] ✅ Package found:', {
+      id: packageData.id,
+      productId: packageData.productId,
+      totalCredits: packageData.totalCredits,
+      oneTime: packageData.oneTime
+    });
 
     // Ensure user account exists
     const ensured = await ensureAccount(userId);
@@ -307,7 +387,13 @@ router.post('/apple/verify-receipt', async (req, res) => {
     const purchasedSet = new Set<string>(purchasedProducts);
 
     // Check for duplicate one-time purchase
+    console.log('[PAYMENT_ID_DEBUG] Checking for duplicate purchase...');
+    console.log(`[PAYMENT_ID_DEBUG]   packageData.oneTime: ${packageData.oneTime}`);
+    console.log(`[PAYMENT_ID_DEBUG]   Checking if "${productId}" is in purchasedSet:`, purchasedSet.has(productId));
+    console.log(`[PAYMENT_ID_DEBUG]   Current purchasedProducts:`, Array.from(purchasedSet));
+    
     if (packageData.oneTime && purchasedSet.has(productId)) {
+      console.log('[PAYMENT_ID_DEBUG] ⚠️ Product already purchased (one-time)');
       return res.json({
         success: true,
         creditsAdded: 0,
@@ -322,7 +408,12 @@ router.post('/apple/verify-receipt', async (req, res) => {
       ? userSettings.processedTransactions
       : [];
 
+    console.log(`[PAYMENT_ID_DEBUG] Checking if transactionId "${transactionId}" already processed...`);
+    console.log(`[PAYMENT_ID_DEBUG]   Processed transactions:`, processedTransactions);
+    console.log(`[PAYMENT_ID_DEBUG]   Transaction already processed: ${transactionId && processedTransactions.includes(transactionId)}`);
+
     if (transactionId && processedTransactions.includes(transactionId)) {
+      console.log('[PAYMENT_ID_DEBUG] ⚠️ Transaction already processed');
       return res.json({
         success: true,
         creditsAdded: 0,
@@ -337,12 +428,19 @@ router.post('/apple/verify-receipt', async (req, res) => {
     const creditsToAdd = packageData.totalCredits;
     const newCredits = currentCredits + creditsToAdd;
 
+    console.log('[PAYMENT_ID_DEBUG] Crediting user...');
+    console.log(`[PAYMENT_ID_DEBUG]   Current credits: ${currentCredits}`);
+    console.log(`[PAYMENT_ID_DEBUG]   Credits to add: ${creditsToAdd}`);
+    console.log(`[PAYMENT_ID_DEBUG]   New total: ${newCredits}`);
+
     if (packageData.oneTime) {
+      console.log(`[PAYMENT_ID_DEBUG]   Adding "${productId}" to purchasedProducts (one-time)`);
       purchasedSet.add(productId);
     }
 
     // Track processed transaction
     if (transactionId) {
+      console.log(`[PAYMENT_ID_DEBUG]   Adding transactionId "${transactionId}" to processedTransactions`);
       processedTransactions.push(transactionId);
     }
 
@@ -352,17 +450,24 @@ router.post('/apple/verify-receipt', async (req, res) => {
       processedTransactions,
     };
 
+    console.log('[PAYMENT_ID_DEBUG] Updating database...');
+    console.log(`[PAYMENT_ID_DEBUG]   Table: ${accountTable}`);
+    console.log(`[PAYMENT_ID_DEBUG]   userId: ${userId}`);
+    console.log(`[PAYMENT_ID_DEBUG]   Updated purchasedProducts:`, Array.from(purchasedSet));
+    console.log(`[PAYMENT_ID_DEBUG]   Updated processedTransactions:`, processedTransactions);
+
     const { error: updateError } = await supabaseAdmin
       .from(accountTable)
       .update({ number_of_credits: newCredits, settings: updatedSettings })
       .eq('id', userId);
 
     if (updateError) {
-      console.error('Failed to update credits:', updateError);
+      console.error('[PAYMENT_ID_DEBUG] ❌ Failed to update credits:', updateError);
       return res.status(500).json({ error: 'Failed to update credits' });
     }
 
-    console.log(`Credited ${creditsToAdd} credits to user ${userId} for product ${productId}`);
+    console.log(`[PAYMENT_ID_DEBUG] ✅ Successfully credited ${creditsToAdd} credits to user ${userId} for product "${productId}"`);
+    console.log('[PAYMENT_ID_DEBUG] ===== /apple/verify-receipt REQUEST END (SUCCESS) =====');
 
     res.json({
       success: true,
@@ -371,7 +476,9 @@ router.post('/apple/verify-receipt', async (req, res) => {
       purchasedProducts: Array.from(purchasedSet),
     });
   } catch (error: any) {
-    console.error('Error verifying Apple receipt:', error);
+    console.error('[PAYMENT_ID_DEBUG] ❌ Error verifying Apple receipt:', error);
+    console.error('[PAYMENT_ID_DEBUG] Error stack:', error.stack);
+    console.log('[PAYMENT_ID_DEBUG] ===== /apple/verify-receipt REQUEST END (ERROR) =====');
     res.status(500).json({ error: error.message || 'Failed to verify receipt' });
   }
 });
@@ -426,7 +533,11 @@ router.post('/merge-guest-account', async (req, res) => {
     const userPurchased = Array.isArray(userSettings?.purchasedProducts)
       ? userSettings.purchasedProducts
       : [];
+    console.log('[PAYMENT_ID_DEBUG] Merging guest account - purchased products:');
+    console.log(`[PAYMENT_ID_DEBUG]   Guest purchased:`, guestPurchased);
+    console.log(`[PAYMENT_ID_DEBUG]   User purchased:`, userPurchased);
     const mergedPurchased = Array.from(new Set([...guestPurchased, ...userPurchased]));
+    console.log(`[PAYMENT_ID_DEBUG]   Merged purchased:`, mergedPurchased);
 
     // Merge processed transactions
     const guestTransactions = Array.isArray(guestSettings?.processedTransactions)
