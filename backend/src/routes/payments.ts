@@ -6,6 +6,16 @@ dotenv.config();
 
 const router = Router();
 
+// Middleware to log all requests to payments routes
+router.use((req, res, next) => {
+  console.log(`[PAYMENTS_ROUTE] ${req.method} ${req.path} - ${new Date().toISOString()}`);
+  console.log(`[PAYMENTS_ROUTE] Headers:`, req.headers);
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log(`[PAYMENTS_ROUTE] Body:`, JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
+
 // Apple App Store shared secret for receipt verification
 const APPLE_SHARED_SECRET = process.env.APPLE_SHARED_SECRET || '';
 
@@ -610,8 +620,17 @@ router.post('/merge-guest-account', async (req, res) => {
 
 // IAP logging endpoint - receives logs from frontend
 router.post('/logs/iap', async (req, res) => {
+  console.log('[IAP_LOG_FRONTEND] ===== LOG ENDPOINT HIT =====');
+  console.log('[IAP_LOG_FRONTEND] Request received at:', new Date().toISOString());
+  console.log('[IAP_LOG_FRONTEND] Request body:', JSON.stringify(req.body, null, 2));
+  
   try {
     const { level, message, data, timestamp, platform } = req.body;
+    
+    if (!level || !message) {
+      console.warn('[IAP_LOG_FRONTEND] Missing required fields: level or message');
+      return res.status(400).json({ error: 'level and message are required' });
+    }
     
     // Log to console with appropriate level
     const logMessage = `[IAP_LOG_FRONTEND] [${level.toUpperCase()}] ${message}`;
@@ -635,11 +654,21 @@ router.post('/logs/iap', async (req, res) => {
     }
     
     // Return success (we don't need to store these, just log them)
-    res.json({ success: true });
+    res.json({ success: true, received: true });
   } catch (error: any) {
     console.error('[IAP_LOG_FRONTEND] Error processing log:', error);
     res.status(500).json({ error: 'Failed to process log' });
   }
+});
+
+// Test endpoint to verify the route is accessible
+router.get('/logs/iap/test', (req, res) => {
+  console.log('[IAP_LOG_FRONTEND] Test endpoint hit!');
+  res.json({ 
+    success: true, 
+    message: 'IAP logging endpoint is accessible',
+    timestamp: new Date().toISOString()
+  });
 });
 
 export default router;
