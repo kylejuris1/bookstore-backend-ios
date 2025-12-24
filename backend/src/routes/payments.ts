@@ -33,7 +33,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 200,
     totalCredits: 600,
     price: 1.99,
-    productId: 'credits_201',
+    productId: 'credits_202',
     oneTime: true,
     highlight: true,
     tagline: 'Limited one-time starter boost',
@@ -44,7 +44,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 0,
     totalCredits: 500,
     price: 4.99,
-    productId: 'credits_501',
+    productId: 'credits_502',
   },
   {
     id: '1000',
@@ -52,7 +52,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 10,
     totalCredits: 1100,
     price: 9.99,
-    productId: 'credits_1001',
+    productId: 'credits_1002',
   },
   {
     id: '2000',
@@ -60,7 +60,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 15,
     totalCredits: 2300,
     price: 19.99,
-    productId: 'credits_2001',
+    productId: 'credits_2002',
   },
   {
     id: '3000',
@@ -68,7 +68,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 20,
     totalCredits: 3600,
     price: 29.99,
-    productId: 'credits_3001',
+    productId: 'credits_3002',
   },
   {
     id: '5000',
@@ -76,7 +76,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 25,
     totalCredits: 6250,
     price: 49.99,
-    productId: 'credits_5001',
+    productId: 'credits_5002',
   },
   {
     id: '10000',
@@ -84,7 +84,7 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     bonusPercent: 30,
     totalCredits: 13000,
     price: 99.99,
-    productId: 'credits_10001',
+    productId: 'credits_10002',
   },
 ];
 
